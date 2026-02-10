@@ -45,16 +45,8 @@ class CreateGeonamesAdmin1CodesTable extends Migration {
             $connection = config( 'database.default' );
             $driver     = config( "database.connections.{$connection}.driver" );
 
-            if ( config( 'debug.running_in_continuous_integration' ) ):
-                echo "\nRUNNING THIS TEST IN CI. Index on asciiname(250) won't be created on the admin_1_codes table.";
-                flush();
-            elseif ( 'mysql' == $driver ):
-                echo "\nRunning the mysql database driver. I'll create an index on asciiname(250) on the admin_1_codes";
-                flush();
+            if ( 'mysql' == $driver ):
                 $table->index( [ \Illuminate\Support\Facades\DB::raw( "asciiname(250)" ) ] );
-            else:
-                echo "\n\nNot running the MySQL database driver. You may want to manually create an index on asciiname(250) in the admin_1_codes table.\n\n";
-                flush();
             endif;
         } );
 
