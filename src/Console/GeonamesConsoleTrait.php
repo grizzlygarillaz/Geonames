@@ -143,12 +143,14 @@ trait GeonamesConsoleTrait {
             throw new Exception( "checkDatabase() failed: Check your project's /config/database.php file. The connection name [" . $this->connectionName . "] doesn't exist." );
         }
 
-        // Check for LOAD DATA permissions.
-        if ( ! isset( $databaseConfigurationArray[ 'options' ] )
-             || !isset($databaseConfigurationArray[ 'options' ][ \PDO::MYSQL_ATTR_LOCAL_INFILE ])
-             || TRUE !== $databaseConfigurationArray[ 'options' ][ \PDO::MYSQL_ATTR_LOCAL_INFILE ] ):
-            throw new Exception( "checkDatabase() failed: Make sure you have this line added to your database connection config in the /config/database.php in your project: 'options' => [\PDO::MYSQL_ATTR_LOCAL_INFILE => true,]" );
-        endif;
+        if (($databaseConfigurationArray['driver'] ?? null) === 'mysql') {
+            // Check for LOAD DATA permissions.
+            if (!isset($databaseConfigurationArray['options'])
+                || !isset($databaseConfigurationArray['options'][\PDO::MYSQL_ATTR_LOCAL_INFILE])
+                || TRUE !== $databaseConfigurationArray['options'][\PDO::MYSQL_ATTR_LOCAL_INFILE]):
+                throw new Exception("checkDatabase() failed: Make sure you have this line added to your database connection config in the /config/database.php in your project: 'options' => [\PDO::MYSQL_ATTR_LOCAL_INFILE => true,]");
+            endif;
+        }
 
 
         try {
