@@ -119,6 +119,7 @@ class PostalCode extends AbstractCommand {
             throw new Exception( "The unzipped file could not be found. We were looking for: " . $localTextFile );
         }
 
+        $this->checkLocalInFileConfig();
 
         $this->insertWithLoadDataInfile( $localTextFile );
 

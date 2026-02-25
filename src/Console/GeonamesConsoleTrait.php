@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use MichaelDrennen\Geonames\Models\GeoSetting;
 use MichaelDrennen\Geonames\Models\Log;
-use MichaelDrennen\RemoteFile\RemoteFile;
 use Symfony\Component\DomCrawler\Crawler;
 use ZipArchive;
 
@@ -71,6 +70,63 @@ trait GeonamesConsoleTrait {
         endif;
         return $this->connectionName;
     }
+
+    protected function checkLocalInFileConfig() {
+        $result = DB::connection( $this->connectionName )
+            ->select("SHOW GLOBAL VARIABLES LIKE 'local_infile'");
+
+        if (!empty($result)) {
+            if ($result[0]->Value === "OFF") {
+                $this->info( "Trying to enable 'local_infile'  " . $this->getRunTime() . " seconds." );
+                DB::connection( $this->connectionName )
+                    ->statement("SET GLOBAL local_infile = 1");
+            }
+        } else {
+            $this->warn( "Can't check 'local_infile'  " . $this->getRunTime() . " seconds." );
+        }
+    }
+
+    /**
+     * Given a remote URL, this function will return the file size in bytes.
+     * @param string $url
+     * @return int
+     */
+    public static function getFileSize(string $url) : int {
+        // Assume failure.
+        $result = -1;
+
+        $curl = curl_init( $url );
+
+        // Issue a HEAD request and follow any redirects.
+        curl_setopt( $curl, CURLOPT_NOBODY, true );
+        curl_setopt( $curl, CURLOPT_HEADER, true );
+        curl_setopt( $curl, CURLOPT_RETURNTRANSFER, true );
+        curl_setopt( $curl, CURLOPT_FOLLOWLOCATION, true );
+
+        $data = curl_exec( $curl );
+        curl_close( $curl );
+
+        if( $data ) {
+            $content_length = "unknown";
+            $status = "unknown";
+
+            if( preg_match( "/^HTTP\/1\.[01] (\d\d\d)/", $data, $matches ) ) {
+                $status = (int)$matches[1];
+            }
+
+            if( preg_match( "/Content-Length: (\d+)/", $data, $matches ) ) {
+                $content_length = (int)$matches[1];
+            }
+
+            // http://en.wikipedia.org/wiki/List_of_HTTP_status_codes
+            if( $status == 200 || ($status > 300 && $status <= 308) ) {
+                $result = $content_length;
+            }
+        }
+
+        return (int)$result;
+    }
+
 
     /**
      * Perform some quick checks to make sure the database connection is set up correctly, including the ability to
@@ -175,7 +231,7 @@ trait GeonamesConsoleTrait {
         $localFilePath = GeoSetting::getAbsoluteLocalStoragePath( $connectionName ) . DIRECTORY_SEPARATOR . $basename;
 
         // Display a progress bar if we can get the remote file size.
-        $fileSize = RemoteFile::getFileSize( $link );
+        $fileSize = self::getFileSize( $link );
         if ( $fileSize > 0 ) {
             $geonamesBar = $command->output->createProgressBar( $fileSize );
 
@@ -223,7 +279,7 @@ trait GeonamesConsoleTrait {
      */
     public static function csvFileToArray( string $localFilePath, $delimiter = "\t" ): array {
         $rows = [];
-        if ( ( $handle = fopen( $localFilePath, "r" ) ) !== FALSE ) {
+        if ( ( $handle = fopen( $localFilePath, 'rb') ) !== FALSE ) {
             while ( ( $data = fgetcsv( $handle, 0, $delimiter ) ) !== FALSE ) {
                 $rows[] = $data;
             }
