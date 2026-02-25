@@ -398,13 +398,19 @@ trait GeonamesConsoleTrait {
                 $statement = 'CREATE TABLE ' . $workingTableName . ' LIKE ' . $tableName . ';';
                 break;
 
+            case 'pgsql':
+                // For PostgreSQL, we need to exclude identity/sequences to avoid dependency issues
+                // when dropping the original table later
+                $statement = 'CREATE TABLE ' . $workingTableName . ' (LIKE ' . $tableName . ' INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES);';
+                break;
+
             case 'sqlite':
                 $statementToBeModified = DB::connection( $this->connectionName )
-                                           ->table( 'sqlite_master' )
-                                           ->select( 'sql' )
-                                           ->where( 'type', 'table' )
-                                           ->where( 'name', $tableName )
-                                           ->first()->sql;
+                    ->table( 'sqlite_master' )
+                    ->select( 'sql' )
+                    ->where( 'type', 'table' )
+                    ->where( 'name', $tableName )
+                    ->first()->sql;
                 $search                = 'CREATE TABLE "' . $tableName . '"';
                 $replace               = 'CREATE TABLE "' . $workingTableName . '"';
                 $statement             = str_replace( $search, $replace, $statementToBeModified );
@@ -416,6 +422,24 @@ trait GeonamesConsoleTrait {
         endswitch;
 
         DB::connection( $this->connectionName )->statement( $statement );
-    }
 
+        // For PostgreSQL, we need to handle identity columns separately to create independent sequences
+        if ( $driver === 'pgsql' ) {
+            $identityColumns = DB::connection( $this->connectionName )
+                ->select("
+                    SELECT column_name, column_default
+                    FROM information_schema.columns
+                    WHERE table_name = ?
+                    AND column_default LIKE 'nextval%'
+                ", [$tableName]);
+
+            foreach ($identityColumns as $column) {
+                // Create a new sequence for the working table
+                $sequenceName = $workingTableName . '_' . $column->column_name . '_seq';
+                DB::connection( $this->connectionName )->statement("CREATE SEQUENCE IF NOT EXISTS {$sequenceName}");
+                DB::connection( $this->connectionName )->statement("ALTER TABLE {$workingTableName} ALTER COLUMN {$column->column_name} SET DEFAULT nextval('{$sequenceName}')");
+                DB::connection( $this->connectionName )->statement("ALTER SEQUENCE {$sequenceName} OWNED BY {$workingTableName}.{$column->column_name}");
+            }
+        }
+    }
 }
